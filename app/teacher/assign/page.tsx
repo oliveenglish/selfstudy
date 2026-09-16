@@ -13,13 +13,20 @@ interface StepDraft {
   title: string;
   page_range: string;
   description: string;
+  materialUrl: string;
+}
+
+function isYouTubeUrl(url: string) {
+  return /youtu\.be|youtube\.com/.test(url);
 }
 
 export default function AssignPage() {
   const [students, setStudents] = useState<Student[]>([]);
   const [favorites, setFavorites] = useState<Favorite[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState("");
-  const [steps, setSteps] = useState<StepDraft[]>([{ title: "", page_range: "", description: "" }]);
+  const [steps, setSteps] = useState<StepDraft[]>([
+    { title: "", page_range: "", description: "", materialUrl: "" },
+  ]);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [templateName, setTemplateName] = useState("");
@@ -42,7 +49,7 @@ export default function AssignPage() {
   }
 
   function addStep() {
-    setSteps((prev) => [...prev, { title: "", page_range: "", description: "" }]);
+    setSteps((prev) => [...prev, { title: "", page_range: "", description: "", materialUrl: "" }]);
   }
 
   function removeStep(index: number) {
@@ -57,6 +64,7 @@ export default function AssignPage() {
         title: t.title,
         page_range: t.page_range ?? "",
         description: t.description ?? "",
+        materialUrl: "",
       }))
     );
   }
@@ -69,17 +77,54 @@ export default function AssignPage() {
     setSaving(true);
     setMessage(null);
 
-    const rows = steps
-      .filter((s) => s.title.trim())
-      .map((s, idx) => ({
-        student_id: selectedStudentId,
-        step_no: idx + 1,
-        title: s.title.trim(),
-        page_range: s.page_range.trim() || null,
-        description: s.description.trim() || null,
-        task_date: todayStr(),
-        status: idx === 0 ? "in_progress" : "todo",
-      }));
+    // 이미 오늘 배정된 과제가 있으면 처음(과제 1)으로 되돌리지 않고, 마지막 번호 다음부터 이어서 배정합니다.
+    const { data: existingTasks } = await supabase
+      .from("daily_tasks")
+      .select("step_no")
+      .eq("student_id", selectedStudentId)
+      .eq("task_date", todayStr())
+      .order("step_no", { ascending: false })
+      .limit(1);
+    const startStepNo = ((existingTasks?.[0] as { step_no: number } | undefined)?.step_no ?? 0) + 1;
+    const hasExistingTasks = startStepNo > 1;
+
+    const filledSteps = steps.filter((s) => s.title.trim());
+
+    // 유튜브/구글 드라이브 등 링크가 있으면 자료(materials)로 먼저 등록하고, 그 자료를 과제에 연결합니다.
+    const materialIds: (string | null)[] = [];
+    for (const s of filledSteps) {
+      const url = s.materialUrl.trim();
+      if (!url) {
+        materialIds.push(null);
+        continue;
+      }
+      const { data: material, error: materialError } = await supabase
+        .from("materials")
+        .insert({
+          title: s.title.trim(),
+          type: isYouTubeUrl(url) ? "video" : "pdf",
+          content: url,
+        })
+        .select()
+        .single();
+      if (materialError) {
+        setSaving(false);
+        setMessage("자료 저장 중 오류가 발생했어요: " + materialError.message);
+        return;
+      }
+      materialIds.push((material as { id: string }).id);
+    }
+
+    const rows = filledSteps.map((s, idx) => ({
+      student_id: selectedStudentId,
+      step_no: startStepNo + idx,
+      title: s.title.trim(),
+      page_range: s.page_range.trim() || null,
+      description: s.description.trim() || null,
+      material_id: materialIds[idx],
+      task_date: todayStr(),
+      status: !hasExistingTasks && idx === 0 ? "in_progress" : "todo",
+    }));
 
     const { error } = await supabase.from("daily_tasks").insert(rows);
     setSaving(false);
@@ -88,8 +133,10 @@ export default function AssignPage() {
       setMessage("저장 중 오류가 발생했어요: " + error.message);
       return;
     }
-    setMessage("오늘의 미션이 저장되었어요!");
-    setSteps([{ title: "", page_range: "", description: "" }]);
+    setMessage(
+      hasExistingTasks ? `과제 ${startStepNo}번부터 이어서 저장되었어요!` : "오늘의 미션이 저장되었어요!"
+    );
+    setSteps([{ title: "", page_range: "", description: "", materialUrl: "" }]);
   }
 
   async function handleSaveAsFavorite() {
@@ -157,7 +204,7 @@ export default function AssignPage() {
         {steps.map((step, idx) => (
           <div key={idx} className="rounded-2xl bg-white p-4 shadow-sm">
             <div className="mb-2 flex items-center justify-between">
-              <span className="text-xs font-bold text-accent">Step {idx + 1}</span>
+              <span className="text-xs font-bold text-accent">과제 {idx + 1}</span>
               {steps.length > 1 && (
                 <button onClick={() => removeStep(idx)} className="text-xs text-gray-400">
                   삭제
@@ -183,6 +230,13 @@ export default function AssignPage() {
               onChange={(e) => updateStep(idx, "description", e.target.value)}
               placeholder="이 과제를 어떻게 수행해야 하는지 설명 (예: 영상을 먼저 보고, 노트에 핵심 문장 3개를 따라 써보세요)"
               rows={2}
+              className="mb-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+            />
+            <input
+              type="text"
+              value={step.materialUrl}
+              onChange={(e) => updateStep(idx, "materialUrl", e.target.value)}
+              placeholder="자료 링크 (유튜브 영상 또는 구글 드라이브 파일 링크)"
               className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
             />
           </div>
