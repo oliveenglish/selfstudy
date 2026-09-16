@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { getStudentSession, clearStudentSession } from "@/lib/auth";
 import { DailyTask, Material } from "@/lib/types";
-import MissionCard from "@/components/MissionCard";
+import MissionCard, { CommentLogEntry } from "@/components/MissionCard";
 import ProgressBar from "@/components/ProgressBar";
 import MaterialModal from "@/components/MaterialModal";
 
@@ -18,6 +18,7 @@ export default function StudentPage() {
   const [studentId, setStudentId] = useState<string | null>(null);
   const [studentName, setStudentName] = useState<string>("");
   const [tasks, setTasks] = useState<DailyTask[]>([]);
+  const [commentsByTask, setCommentsByTask] = useState<Record<string, CommentLogEntry[]>>({});
   const [loading, setLoading] = useState(true);
   const [activeMaterial, setActiveMaterial] = useState<{
     title: string;
@@ -32,8 +33,27 @@ export default function StudentPage() {
       .eq("student_id", sid)
       .eq("task_date", todayStr())
       .order("step_no", { ascending: true });
-    setTasks((data as DailyTask[]) ?? []);
+    const loadedTasks = (data as DailyTask[]) ?? [];
+    setTasks(loadedTasks);
     setLoading(false);
+
+    const taskIds = loadedTasks.map((t) => t.id);
+    if (taskIds.length > 0) {
+      const { data: logs } = await supabase
+        .from("check_logs")
+        .select("task_id, comment, checked_at")
+        .in("task_id", taskIds)
+        .not("comment", "is", null)
+        .order("checked_at", { ascending: true });
+      const grouped: Record<string, CommentLogEntry[]> = {};
+      (logs ?? []).forEach((log: { task_id: string; comment: string; checked_at: string | null }) => {
+        grouped[log.task_id] = grouped[log.task_id] ?? [];
+        grouped[log.task_id].push({ comment: log.comment, checked_at: log.checked_at });
+      });
+      setCommentsByTask(grouped);
+    } else {
+      setCommentsByTask({});
+    }
   }, []);
 
   useEffect(() => {
@@ -67,9 +87,6 @@ export default function StudentPage() {
     };
   }, [router, loadTasks]);
 
-  // 검사 대기 중인 과제는 선생님이 나중에 확인하러 오기로 하고,
-  // 학생은 계속 다음 단계로 넘어가서 진행할 수 있어야 합니다.
-  // (완료/검사대기 상태는 더 이상 학생이 손댈 필요가 없으므로 건너뜁니다.)
   const currentStepNo = useMemo(() => {
     const next = tasks.find((t) => t.status !== "done" && t.status !== "waiting_check");
     return next?.step_no ?? null;
@@ -148,6 +165,7 @@ export default function StudentPage() {
               key={task.id}
               task={task}
               isCurrent={task.step_no === currentStepNo}
+              comments={commentsByTask[task.id]}
               onRequestCheck={handleRequestCheck}
               onRequestHelp={handleRequestHelp}
               onOpenMaterial={handleOpenMaterial}
