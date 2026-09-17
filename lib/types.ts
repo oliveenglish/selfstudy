@@ -29,6 +29,7 @@ export interface DailyTask {
   teacher_comment: string | null;
   result_value: string | null;
   requested_at: string | null;
+  started_at: string | null;
   checked_at: string | null;
   created_at: string;
 }
@@ -37,6 +38,13 @@ export interface Favorite {
   id: string;
   title: string;
   template_data: { title: string; page_range?: string; description?: string; material_id?: string }[];
+  created_at: string;
+}
+
+export interface Notice {
+  id: string;
+  message: string;
+  notice_date: string;
   created_at: string;
 }
 
