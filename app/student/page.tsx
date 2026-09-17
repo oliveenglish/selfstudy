@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { getStudentSession, clearStudentSession } from "@/lib/auth";
-import { DailyTask, Material } from "@/lib/types";
+import { DailyTask, Material, Notice } from "@/lib/types";
 import MissionCard, { CommentLogEntry } from "@/components/MissionCard";
 import ProgressBar from "@/components/ProgressBar";
 import MaterialModal from "@/components/MaterialModal";
@@ -19,6 +19,7 @@ export default function StudentPage() {
   const [studentName, setStudentName] = useState<string>("");
   const [tasks, setTasks] = useState<DailyTask[]>([]);
   const [commentsByTask, setCommentsByTask] = useState<Record<string, CommentLogEntry[]>>({});
+  const [notice, setNotice] = useState<Notice | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeMaterial, setActiveMaterial] = useState<{
     title: string;
@@ -71,6 +72,13 @@ export default function StudentPage() {
       .maybeSingle()
       .then(({ data }) => setStudentName(data?.name ?? ""));
 
+    supabase
+      .from("notices")
+      .select("*")
+      .eq("notice_date", todayStr())
+      .maybeSingle()
+      .then(({ data }) => setNotice((data as Notice) ?? null));
+
     loadTasks(sid);
 
     const channel = supabase
@@ -98,7 +106,20 @@ export default function StudentPage() {
     return Math.round((done / tasks.length) * 100);
   }, [tasks]);
 
+  const allDone = tasks.length > 0 && percentDone === 100;
+
+  async function markStartedIfNeeded(taskId: string) {
+    const task = tasks.find((t) => t.id === taskId);
+    if (task && !task.started_at) {
+      await supabase
+        .from("daily_tasks")
+        .update({ started_at: new Date().toISOString() })
+        .eq("id", taskId);
+    }
+  }
+
   async function handleRequestCheck(taskId: string) {
+    await markStartedIfNeeded(taskId);
     await supabase
       .from("daily_tasks")
       .update({ status: "waiting_check", requested_at: new Date().toISOString() })
@@ -106,6 +127,7 @@ export default function StudentPage() {
   }
 
   async function handleRequestHelp(taskId: string) {
+    await markStartedIfNeeded(taskId);
     await supabase
       .from("daily_tasks")
       .update({ status: "help_needed", requested_at: new Date().toISOString() })
@@ -113,6 +135,7 @@ export default function StudentPage() {
   }
 
   async function handleOpenMaterial(task: DailyTask) {
+    await markStartedIfNeeded(task.id);
     if (!task.material_id) {
       setActiveMaterial({ title: task.title, description: task.description, material: null });
       return;
@@ -150,9 +173,22 @@ export default function StudentPage() {
         </button>
       </div>
 
+      {notice && (
+        <div className="mb-4 rounded-2xl bg-yellow-50 p-4 shadow-sm">
+          <p className="mb-1 text-xs font-bold text-yellow-700">📢 오늘의 선생님 전달사항</p>
+          <p className="whitespace-pre-wrap text-sm text-navy">{notice.message}</p>
+        </div>
+      )}
+
       <div className="mb-6 rounded-2xl bg-white p-4 shadow-sm">
         <ProgressBar percent={percentDone} />
       </div>
+
+      {allDone && (
+        <div className="mb-6 rounded-2xl bg-done/10 p-4 text-center shadow-sm">
+          <p className="text-lg font-bold text-done">🎉 축하해요! 과제를 멋지게 완료했어요</p>
+        </div>
+      )}
 
       {tasks.length === 0 ? (
         <p className="mt-10 text-center text-sm text-gray-400">
