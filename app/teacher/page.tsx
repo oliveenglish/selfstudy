@@ -56,28 +56,16 @@ export default function TeacherDashboard() {
     return students
       .map((s) => {
         const tasks = tasksByStudent[s.id] ?? [];
-        // 여러 단계 중 선생님이 가장 먼저 봐야 하는 상태(도와주세요 > 검사대기 > ...)를 우선 표시합니다.
-        const current =
-          [...tasks].sort(
-            (a, b) => (STATUS_ORDER[a.status] ?? 4) - (STATUS_ORDER[b.status] ?? 4)
-          )[0] ?? null;
-        const doneCount = tasks.filter((t) => t.status === "done").length;
-        return {
-          student: s,
-          current,
-          progressText: tasks.length ? `${doneCount}/${tasks.length} 완료` : "오늘 배정된 과제 없음",
-          sortKey: STATUS_ORDER[current?.status ?? "todo"] ?? 5,
-        };
+        const bestStatus = tasks.reduce<number>(
+          (best, t) => Math.min(best, STATUS_ORDER[t.status] ?? 4),
+          5
+        );
+        return { student: s, tasks, sortKey: tasks.length ? bestStatus : 6 };
       })
       .sort((a, b) => a.sortKey - b.sortKey);
   }, [students, tasksByStudent]);
 
-  async function handleResolve(
-    taskId: string,
-    result: "pass" | "redo",
-    comment: string,
-    resultValue: string
-  ) {
+  async function handleResolve(taskId: string, result: "pass" | "redo", comment: string) {
     const now = new Date().toISOString();
     await supabase
       .from("daily_tasks")
@@ -85,7 +73,6 @@ export default function TeacherDashboard() {
         status: result === "pass" ? "done" : "redo",
         checked_at: now,
         teacher_comment: comment || null,
-        result_value: resultValue || null,
       })
       .eq("id", taskId);
 
@@ -94,15 +81,11 @@ export default function TeacherDashboard() {
       checked_at: now,
       result,
       comment: comment || null,
-      result_value: resultValue || null,
     });
   }
 
   async function handleResolveHelp(taskId: string) {
-    await supabase
-      .from("daily_tasks")
-      .update({ status: "in_progress" })
-      .eq("id", taskId);
+    await supabase.from("daily_tasks").update({ status: "in_progress" }).eq("id", taskId);
   }
 
   if (loading) {
@@ -114,16 +97,10 @@ export default function TeacherDashboard() {
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-xl font-bold text-navy">오늘의 수업 현황</h1>
         <div className="flex gap-2">
-          <Link
-            href="/teacher/students"
-            className="rounded-xl border border-navy px-4 py-2 text-sm font-semibold text-navy"
-          >
+          <Link href="/teacher/students" className="rounded-xl border border-navy px-4 py-2 text-sm font-semibold text-navy">
             학생 관리
           </Link>
-          <Link
-            href="/teacher/assign"
-            className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white shadow-sm"
-          >
+          <Link href="/teacher/assign" className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white shadow-sm">
             + 오늘 과제 출제하기
           </Link>
         </div>
@@ -133,13 +110,12 @@ export default function TeacherDashboard() {
         <p className="text-sm text-gray-400">등록된 학생이 없어요. Supabase의 students 테이블에 학생을 추가해주세요.</p>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {rows.map(({ student, current, progressText }) => (
+          {rows.map(({ student, tasks }) => (
             <StudentStatusCard
               key={student.id}
               studentId={student.id}
               studentName={student.name}
-              currentTask={current}
-              progressText={progressText}
+              tasks={tasks}
               onResolve={handleResolve}
               onResolveHelp={handleResolveHelp}
             />
