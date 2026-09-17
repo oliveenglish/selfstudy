@@ -25,8 +25,6 @@ export default function StudentStatusCard({
   const percent = tasks.length ? Math.round((doneCount / tasks.length) * 100) : 0;
 
   useEffect(() => {
-    // 선생님이 다른 과제를 선택해서 보고 있는 중이면 그 선택을 유지하고,
-    // 아니면 가장 먼저 봐야 할 과제(도와주세요 > 검사대기)를 기본으로 보여줍니다.
     if (selectedTaskId && tasks.some((t) => t.id === selectedTaskId)) return;
     const priority =
       tasks.find((t) => t.status === "help_needed") ??
