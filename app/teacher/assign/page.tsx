@@ -77,7 +77,6 @@ export default function AssignPage() {
     setSaving(true);
     setMessage(null);
 
-    // 이미 오늘 배정된 과제가 있으면 처음(과제 1)으로 되돌리지 않고, 마지막 번호 다음부터 이어서 배정합니다.
     const { data: existingTasks } = await supabase
       .from("daily_tasks")
       .select("step_no")
@@ -90,7 +89,6 @@ export default function AssignPage() {
 
     const filledSteps = steps.filter((s) => s.title.trim());
 
-    // 유튜브/구글 드라이브 등 링크가 있으면 자료(materials)로 먼저 등록하고, 그 자료를 과제에 연결합니다.
     const materialIds: (string | null)[] = [];
     for (const s of filledSteps) {
       const url = s.materialUrl.trim();
