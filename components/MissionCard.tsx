@@ -7,6 +7,11 @@ export interface CommentLogEntry {
   checked_at: string | null;
 }
 
+function formatTime(iso: string | null) {
+  if (!iso) return null;
+  return new Date(iso).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+}
+
 export default function MissionCard({
   task,
   isCurrent,
@@ -27,6 +32,8 @@ export default function MissionCard({
   const isRedo = task.status === "redo";
   const isHelp = task.status === "help_needed";
   const showActionButtons = isCurrent && !isWaiting && !isDone && !isHelp;
+  const startedLabel = formatTime(task.started_at);
+  const finishedLabel = formatTime(task.checked_at);
 
   return (
     <div
@@ -62,7 +69,18 @@ export default function MissionCard({
         <p className="text-lg font-bold text-navy">{task.title}</p>
         {task.page_range && <p className="mt-1 text-sm text-gray-500">{task.page_range}</p>}
         {task.description && <p className="mt-1 text-sm text-gray-400">📝 {task.description}</p>}
+        {task.material_id && (
+          <p className="mt-1 text-sm font-semibold text-accent">🔗 눌러서 자료 보기 (클릭!)</p>
+        )}
       </button>
+
+      {(startedLabel || finishedLabel) && (
+        <p className="mt-2 text-xs text-gray-400">
+          {startedLabel && `⏱ 시작 ${startedLabel}`}
+          {startedLabel && finishedLabel && " · "}
+          {finishedLabel && `완료 ${finishedLabel}`}
+        </p>
+      )}
 
       {comments && comments.length > 0 ? (
         <div className="mt-3 flex flex-col gap-1.5">
